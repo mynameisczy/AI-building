@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>我的个人主页</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 640px;
+      width: 100%;
+      padding: 48px 40px;
+      text-align: center;
+    }
+
+    .avatar {
+      width: 110px;
+      height: 110px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: #fff;
+      font-size: 44px;
+      font-weight: bold;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: 0 auto 24px;
+    }
+
+    h1 {
+      font-size: 28px;
+      color: #333;
+      margin-bottom: 8px;
+    }
+
+    .role {
+      color: #764ba2;
+      font-size: 16px;
+      margin-bottom: 24px;
+    }
+
+    .bio {
+      color: #666;
+      line-height: 1.8;
+      font-size: 15px;
+      margin-bottom: 32px;
+    }
+
+    .section-title {
+      font-size: 14px;
+      color: #999;
+      letter-spacing: 2px;
+      margin-bottom: 16px;
+    }
+
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      margin-bottom: 32px;
+    }
+
+    .tag {
+      background: #f0f1f8;
+      color: #555;
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 13px;
+    }
+
+    .links a {
+      display: inline-block;
+      margin: 0 8px;
+      padding: 10px 24px;
+      border-radius: 24px;
+      text-decoration: none;
+      font-size: 14px;
+      transition: all 0.3s ease;
+    }
+
+    .links a.primary {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: #fff;
+    }
+
+    .links a.primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+    }
+
+    .links a.ghost {
+      border: 1px solid #ddd;
+      color: #666;
+    }
+
+    .links a.ghost:hover {
+      border-color: #667eea;
+      color: #667eea;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="avatar">C</div>
+    <h1>mynameisczy</h1>
+    <p class="role">软件开发者 · 终身学习者</p>
+
+    <p class="bio">
+      你好，欢迎来到我的个人主页！我热爱编程与技术分享，
+      喜欢用代码解决实际问题，也在不断学习新的技术栈。
+      工作之余喜欢阅读、运动和探索新事物。
+    </p>
+
+    <p class="section-title">技 能</p>
+    <div class="tags">
+      <span class="tag">HTML / CSS</span>
+      <span class="tag">JavaScript</span>
+      <span class="tag">Git</span>
+      <span class="tag">Python</span>
+    </div>
+
+    <p class="section-title">联 系 我</p>
+    <div class="links">
+      <a class="primary" href="https://github.com/mynameisczy" target="_blank">GitHub</a>
+      <a class="ghost" href="mailto:1395314176@qq.com">发邮件</a>
+    </div>
+  </main>
+</body>
+</html>
