@@ -17,15 +17,8 @@ async function getSettings() {
   };
 }
 
-// 安装时初始化默认设置（不覆盖用户已有配置）
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.sync.get({ baseUrl: '', model: '' }, (cfg) => {
-    const patch = {};
-    if (!cfg.baseUrl) patch.baseUrl = api.DEFAULT_SETTINGS.baseUrl;
-    if (!cfg.model) patch.model = api.DEFAULT_SETTINGS.model;
-    if (Object.keys(patch).length) chrome.storage.sync.set(patch);
-  });
-});
+// 说明：默认值在 getSettings()/popup 读取时兜底，不做安装时写入，
+// 避免 onInstalled 异步初始化与用户保存设置之间的写覆盖竞态。
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {

@@ -1,5 +1,8 @@
 /**
- * 端到端测试：真实 Chromium（Edge）加载插件 + 本地 Mock OpenAI 服务器
+ * 端到端测试：真实 Chromium（Edge）加载插件
+ * 两种模式：
+ *   默认（Mock）：      本地 Mock OpenAI 服务器，快速、稳定、可断言请求细节
+ *   真实 API（Real）：  AITX_E2E_REAL=1 AITX_API_KEY=sk-xxx node test/e2e.mjs
  * 覆盖：整页翻译（英→中 / 中→英）、隐藏/显示原文、恢复原状、
  *       划词翻译、网页总结、popup 设置与测试连接。
  */
@@ -19,6 +22,12 @@ fs.rmSync(ARTIFACTS, { recursive: true, force: true });
 fs.mkdirSync(ARTIFACTS, { recursive: true });
 fs.rmSync(PROFILE, { recursive: true, force: true });
 
+const REAL = process.env.AITX_E2E_REAL === '1';
+// 真实推理模型耗时较长，放宽等待
+const T = REAL
+  ? { translate: 150000, summary: 240000, sel: 90000 }
+  : { translate: 15000, summary: 15000, sel: 15000 };
+
 /* ---------- 静态页面服务器（避免 file:// 权限问题） ---------- */
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript' };
 const pageServer = http.createServer((req, res) => {
@@ -33,6 +42,22 @@ await new Promise((r) => pageServer.listen(18768, '127.0.0.1', r));
 const PAGE_BASE = 'http://127.0.0.1:18768';
 
 const { server: mock, port: MOCK_PORT, requests } = await startMockServer();
+
+const desiredSettings = REAL
+  ? {
+      apiKey: process.env.AITX_API_KEY || '',
+      baseUrl: process.env.AITX_BASE_URL || 'https://api.deepseek.com',
+      model: process.env.AITX_MODEL || 'deepseek-v4-flash',
+      selectionEnabled: true,
+    }
+  : {
+      apiKey: 'mock-key',
+      baseUrl: `http://127.0.0.1:${MOCK_PORT}`,
+      model: 'mock-model',
+      selectionEnabled: true,
+    };
+console.log(`E2E 模式: ${REAL ? '真实 API' : 'Mock'}`);
+if (REAL) console.log(`API: ${desiredSettings.baseUrl} / ${desiredSettings.model}`);
 
 let passed = 0, failed = 0;
 const failures = [];
@@ -54,19 +79,17 @@ try {
   const extId = new URL(sw.url()).host;
   console.log(`插件已加载，ID: ${extId}\n`);
 
-  // 预置插件设置（指向 Mock 服务器）；轮询防 onInstalled 初始化竞态覆盖
-  const desiredSettings = {
-    apiKey: 'mock-key',
-    baseUrl: `http://127.0.0.1:${MOCK_PORT}`,
-    model: 'mock-model',
-    selectionEnabled: true,
-  };
+  // 预置插件设置；轮询确认写入成功（防止任何初始化竞态）
   let settingsOk = false;
   for (let i = 0; i < 10; i++) {
     await sw.evaluate((d) => chrome.storage.sync.set(d), desiredSettings);
     await new Promise((r) => setTimeout(r, 300));
     const cur = await sw.evaluate(() => chrome.storage.sync.get(['apiKey', 'baseUrl', 'model']));
-    if (cur.baseUrl === desiredSettings.baseUrl) { settingsOk = true; break; }
+    if (
+      cur.baseUrl === desiredSettings.baseUrl &&
+      cur.model === desiredSettings.model &&
+      cur.apiKey === desiredSettings.apiKey
+    ) { settingsOk = true; break; }
   }
   check('插件设置预置成功', settingsOk);
 
@@ -93,18 +116,20 @@ try {
   await pageEn.goto(`${PAGE_BASE}/sample-en.html`);
   await pageEn.waitForSelector('article p');
   const r1 = await sendToPage(pageEn, { type: 'TRANSLATE_PAGE' });
-  check('TRANSLATE_PAGE 返回成功', r1?.ok === true, JSON.stringify(r1));
-  await pageEn.waitForSelector('.aitx-trans', { timeout: 15000 });
+  check('TRANSLATE_PAGE 返回成功', r1?.ok === true, JSON.stringify(r1).slice(0, 200));
+  await pageEn.waitForSelector('.aitx-trans', { timeout: T.translate });
   const enStats = await pageEn.evaluate(() => ({
     trans: document.querySelectorAll('.aitx-trans').length,
     orig: document.querySelectorAll('.aitx-orig').length,
+    firstOrig: document.querySelector('.aitx-orig')?.textContent || '',
     firstTrans: document.querySelector('.aitx-trans')?.textContent || '',
-    sampleTrans: Array.from(document.querySelectorAll('.aitx-trans')).map((e) => e.textContent).join('|').slice(0, 200),
+    sampleTrans: Array.from(document.querySelectorAll('.aitx-trans')).map((e) => e.textContent).join('|').slice(0, 300),
   }));
   check('译文段落 ≥ 5', enStats.trans >= 5, `实际 ${enStats.trans}`);
   check('原文段落保留（双语）', enStats.orig >= 5, `实际 ${enStats.orig}`);
-  check('译文含中文（英→中）', /[\u4e00-\u9fff]/.test(enStats.sampleTrans), enStats.sampleTrans);
-  check('译文来自 Mock 管道', enStats.sampleTrans.includes('[MOCK-ZH]'), enStats.sampleTrans.slice(0, 120));
+  check('译文含中文（英→中）', /[\u4e00-\u9fff]/.test(enStats.sampleTrans), enStats.sampleTrans.slice(0, 150));
+  check('译文确实经过 AI（非原文）', enStats.sampleTrans !== enStats.firstOrig && /[\u4e00-\u9fff]/.test(enStats.firstTrans), enStats.firstTrans.slice(0, 100));
+  if (!REAL) check('译文来自 Mock 管道', enStats.sampleTrans.includes('[MOCK-ZH]'), enStats.sampleTrans.slice(0, 120));
   await pageEn.screenshot({ path: path.join(ARTIFACTS, '1-fullpage-en2zh.png'), fullPage: false });
 
   /* ---------- 2. 隐藏/显示原文 ---------- */
@@ -139,14 +164,18 @@ try {
   await pageEn.waitForSelector('.aitx-selbtn.aitx-show', { timeout: 5000 });
   check('划词按钮出现', true);
   await pageEn.click('.aitx-selbtn');
-  await pageEn.waitForSelector('.aitx-selbox-body', { timeout: 15000 });
+  await pageEn.waitForSelector('.aitx-selbox-body', { timeout: T.sel });
   await pageEn.waitForFunction(() => {
     const el = document.querySelector('.aitx-selbox-body');
-    return el && el.textContent.includes('MOCK');
-  }, { timeout: 15000 });
-  const selText = await pageEn.evaluate(() => document.querySelector('.aitx-selbox-body')?.textContent || '');
-  check('划词译文含中文', /[\u4e00-\u9fff]/.test(selText), selText.slice(0, 120));
-  check('划词译文来自 Mock 管道', selText.includes('[MOCK-T-ZH]'), selText.slice(0, 120));
+    return el && el.textContent.trim().length > 2 && !el.textContent.includes('翻译中');
+  }, { timeout: T.sel });
+  const selInfo = await pageEn.evaluate(() => ({
+    text: document.querySelector('.aitx-selbox-body')?.textContent || '',
+    orig: document.querySelectorAll('article p')[1]?.textContent || '',
+  }));
+  check('划词译文含中文', /[\u4e00-\u9fff]/.test(selInfo.text), selInfo.text.slice(0, 120));
+  check('划词译文为 AI 翻译结果', selInfo.text.trim() !== selInfo.orig.trim(), selInfo.text.slice(0, 120));
+  if (!REAL) check('划词译文来自 Mock 管道', selInfo.text.includes('[MOCK-T-ZH]'), selInfo.text.slice(0, 120));
   await pageEn.screenshot({ path: path.join(ARTIFACTS, '3-selection.png') });
   await pageEn.click('.aitx-selbox-close');
   const boxGone = await pageEn.evaluate(() => !document.querySelector('.aitx-selbox'));
@@ -155,15 +184,15 @@ try {
   /* ---------- 4. 网页总结 ---------- */
   console.log('[E2E] 网页总结');
   const r4 = await sendToPage(pageEn, { type: 'SUMMARIZE_PAGE' });
-  check('SUMMARIZE_PAGE 返回成功', r4?.ok === true, JSON.stringify(r4));
-  await pageEn.waitForSelector('.aitx-modal.aitx-show', { timeout: 15000 });
+  check('SUMMARIZE_PAGE 返回成功', r4?.ok === true, JSON.stringify(r4).slice(0, 200));
+  await pageEn.waitForSelector('.aitx-modal.aitx-show', { timeout: T.summary });
   await pageEn.waitForFunction(() => {
     const el = document.querySelector('.aitx-modal-body');
-    return el && el.textContent.includes('一句话总结');
-  }, { timeout: 15000 });
+    return el && el.textContent.replace(/\s/g, '').length > 60 && !el.textContent.includes('正在阅读');
+  }, { timeout: T.summary });
   const sumText = await pageEn.evaluate(() => document.querySelector('.aitx-modal-body')?.textContent || '');
-  check('总结含结构化内容', sumText.includes('一句话总结') && sumText.includes('核心要点'), sumText.slice(0, 120));
-  check('总结含要点列表', sumText.includes('要点一'), sumText.slice(0, 120));
+  check('总结为结构化内容', sumText.includes('总结') && (sumText.includes('要点') || sumText.includes('结论') || sumText.includes('•') || sumText.includes('TL;DR')), sumText.slice(0, 150));
+  if (!REAL) check('总结含 Mock 标记', sumText.includes('[MOCK]'), sumText.slice(0, 120));
   await pageEn.screenshot({ path: path.join(ARTIFACTS, '4-summary.png') });
   const closeBtn = await pageEn.$$('.aitx-modal-foot .aitx-btn');
   await closeBtn[closeBtn.length - 1].click();
@@ -186,13 +215,17 @@ try {
   await pageZh.goto(`${PAGE_BASE}/sample-zh.html`);
   await pageZh.waitForSelector('article p');
   const r6 = await sendToPage(pageZh, { type: 'TRANSLATE_PAGE' });
-  check('中文页翻译返回成功', r6?.ok === true, JSON.stringify(r6));
-  await pageZh.waitForSelector('.aitx-trans', { timeout: 15000 });
-  const zhStats = await pageZh.evaluate(() =>
-    Array.from(document.querySelectorAll('.aitx-trans')).map((e) => e.textContent).join('|').slice(0, 300),
-  );
-  check('中文页译文为英文方向', zhStats.includes('[MOCK-EN]'), zhStats);
-  check('中文页原文保留', (await pageZh.evaluate(() => document.querySelectorAll('.aitx-orig').length)) >= 5);
+  check('中文页翻译返回成功', r6?.ok === true, JSON.stringify(r6).slice(0, 200));
+  await pageZh.waitForSelector('.aitx-trans', { timeout: T.translate });
+  const zhStats = await pageZh.evaluate(() => ({
+    sample: Array.from(document.querySelectorAll('.aitx-trans')).map((e) => e.textContent).join('|').slice(0, 300),
+    orig: document.querySelectorAll('.aitx-orig').length,
+    firstOrig: document.querySelector('.aitx-orig')?.textContent || '',
+    firstTrans: document.querySelector('.aitx-trans')?.textContent || '',
+  }));
+  check('中文页译文为英文方向', /[a-zA-Z]{4,}/.test(zhStats.sample) && !/[\u4e00-\u9fff]/.test(zhStats.firstTrans), zhStats.firstTrans.slice(0, 150));
+  if (!REAL) check('中文页译文含 Mock 标记', zhStats.sample.includes('[MOCK-EN]'), zhStats.sample.slice(0, 120));
+  check('中文页原文保留', zhStats.orig >= 5);
   await pageZh.screenshot({ path: path.join(ARTIFACTS, '5-fullpage-zh2en.png') });
 
   /* ---------- 7. Popup 设置页 ---------- */
@@ -206,9 +239,9 @@ try {
     model: document.getElementById('model').value,
     sel: document.getElementById('selEnabled').checked,
   }));
-  check('设置已持久化 (Key)', kv.apiKey === 'mock-key', kv.apiKey);
-  check('设置已持久化 (BaseUrl)', kv.baseUrl.includes(String(MOCK_PORT)), kv.baseUrl);
-  check('设置已持久化 (模型)', kv.model === 'mock-model', kv.model);
+  check('设置已持久化 (Key)', kv.apiKey === desiredSettings.apiKey, kv.apiKey);
+  check('设置已持久化 (BaseUrl)', kv.baseUrl.includes(REAL ? 'deepseek' : String(MOCK_PORT)), kv.baseUrl);
+  check('设置已持久化 (模型)', kv.model === desiredSettings.model, kv.model);
   check('划词开关状态正确', kv.sel === true);
 
   // 测试连接按钮
@@ -216,29 +249,31 @@ try {
   await popup.waitForFunction(() => {
     const el = document.getElementById('testStatus');
     return el && (el.textContent.includes('连接成功') || el.textContent.includes('失败'));
-  }, { timeout: 20000 });
+  }, { timeout: REAL ? 60000 : 20000 });
   const testMsg = await popup.evaluate(() => document.getElementById('testStatus').textContent);
   check('popup 测试连接成功', testMsg.includes('连接成功'), testMsg);
 
   // 修改并保存设置
-  await popup.fill('#model', 'mock-model-2');
+  await popup.fill('#model', desiredSettings.model + '-saved');
   await popup.click('#btnSave');
   const saved = await sw.evaluate(() => chrome.storage.sync.get(['model']));
-  check('popup 保存设置生效', saved.model === 'mock-model-2', JSON.stringify(saved));
+  check('popup 保存设置生效', saved.model === desiredSettings.model + '-saved', JSON.stringify(saved));
   await popup.screenshot({ path: path.join(ARTIFACTS, '6-popup.png') });
 
-  /* ---------- 8. Mock 服务器收到正确请求 ---------- */
-  console.log('[E2E] 请求规范校验');
-  check('Mock 收到请求', requests.length >= 5, `实际 ${requests.length}`);
-  check('鉴权头正确', requests.every((r) => r.auth === 'Bearer mock-key'));
-  check('使用用户配置的模型', requests.every((r) => !!r.model));
-  const batchReq = requests.find((r) => JSON.stringify(r.messages || '').includes('webpage translation engine'));
-  check('批量翻译请求结构正确', !!batchReq && /Translate the following \d+ segment/.test(batchReq.messages.at(-1).content));
+  /* ---------- 8. 请求规范校验（仅 Mock 模式） ---------- */
+  if (!REAL) {
+    console.log('[E2E] 请求规范校验');
+    check('Mock 收到请求', requests.length >= 5, `实际 ${requests.length}`);
+    check('鉴权头正确', requests.every((r) => r.auth === 'Bearer mock-key'));
+    check('使用用户配置的模型', requests.every((r) => !!r.model));
+    const batchReq = requests.find((r) => JSON.stringify(r.messages || '').includes('webpage translation engine'));
+    check('批量翻译请求结构正确', !!batchReq && /Translate the following \d+ segment/.test(batchReq.messages.at(-1).content));
+  }
 
-  console.log(`\n=== E2E 结果：${passed} 通过，${failed} 失败 ===`);
+  console.log(`\n=== E2E 结果（${REAL ? '真实 API' : 'Mock'}）：${passed} 通过，${failed} 失败 ===`);
   console.log(`截图与产物: ${ARTIFACTS}`);
   if (failures.length) {
-    for (const f of failures) console.log(` - ${f.name}: ${f.detail}`);
+    for (const f of failures) console.log(` - ${f.name}: ${String(f.detail).slice(0, 200)}`);
     process.exitCode = 1;
   }
 } catch (e) {

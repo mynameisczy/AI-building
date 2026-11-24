@@ -42,32 +42,40 @@ export async function chat({ settings, messages, temperature = 0.3, maxTokens, t
     throw e;
   }
   const url = chatCompletionsUrl(settings.baseUrl);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res;
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${settings.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: settings.model || DEFAULT_SETTINGS.model,
-        messages,
-        temperature,
-        stream: false,
-        ...(maxTokens ? { max_tokens: maxTokens } : {}),
-      }),
-      signal: controller.signal,
-    });
-  } catch (err) {
-    if (controller.signal.aborted) {
-      throw new Error(`请求超时（超过 ${Math.round(timeoutMs / 1000)} 秒），请稍后重试或更换模型。`);
+  // 网络层失败自动重试一次（瞬时抖动），HTTP 错误不重试
+  for (let attempt = 0; ; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${settings.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: settings.model || DEFAULT_SETTINGS.model,
+          messages,
+          temperature,
+          stream: false,
+          ...(maxTokens ? { max_tokens: maxTokens } : {}),
+        }),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      if (controller.signal.aborted) {
+        throw new Error(`请求超时（超过 ${Math.round(timeoutMs / 1000)} 秒），请稍后重试或更换模型。`);
+      }
+      if (attempt === 0) {
+        await new Promise((r) => setTimeout(r, 800));
+        continue; // 重试一次
+      }
+      throw new Error(`无法连接 API（${url}）：${err?.message || err}`);
+    } finally {
+      clearTimeout(timer);
     }
-    throw new Error(`无法连接 API（${url}）：${err?.message || err}`);
-  } finally {
-    clearTimeout(timer);
+    break;
   }
 
   const raw = await res.text();
@@ -81,8 +89,22 @@ export async function chat({ settings, messages, temperature = 0.3, maxTokens, t
     err.status = res.status;
     throw err;
   }
-  if (!data?.choices?.[0]?.message?.content) {
-    throw new Error(`API 返回格式异常（缺少 choices[0].message.content）：${(raw || '').slice(0, 300)}`);
+  if (!data?.choices?.length || !data.choices[0].message) {
+    throw new Error(`API 返回格式异常（缺少 choices[0].message）：${(raw || '').slice(0, 300)}`);
+  }
+  const content = data.choices[0].message.content;
+  if (typeof content !== 'string' || !content.trim()) {
+    const finish = data.choices[0].finish_reason;
+    if (finish === 'length') {
+      throw new Error('模型回复被 max_tokens 截断，请换用输出更简洁的模型或调大 max_tokens。');
+    }
+    // 推理模型可能出现空 content（如被截断的 reasoning_content），降级使用 reasoning_content
+    const reasoning = data.choices[0].message.reasoning_content;
+    if (typeof reasoning === 'string' && reasoning.trim()) {
+      data.choices[0].message.content = reasoning;
+      return data;
+    }
+    throw new Error(`API 返回了空回复：${(raw || '').slice(0, 200)}`);
   }
   return data;
 }
@@ -217,7 +239,7 @@ export async function testConnection({ settings, timeoutMs = 30000 }) {
     { role: 'system', content: 'You are a connectivity probe. Reply with exactly: OK' },
     { role: 'user', content: 'ping' },
   ];
-  const data = await chat({ settings, messages, temperature: 0, maxTokens: 16, timeoutMs });
+  const data = await chat({ settings, messages, temperature: 0, maxTokens: 512, timeoutMs });
   return {
     model: data.model || settings.model,
     reply: String(data.choices[0].message.content || '').trim(),

@@ -7,7 +7,7 @@
 import * as api from '../ext/lib/api.js';
 
 const settings = {
-  apiKey: process.env.AITX_API_KEY || 'sk-f05b922434bd4ea29b6dbce577461110',
+  apiKey: process.env.AITX_API_KEY || 'sk-cc818195184b4a17afd3037c2608cb7d',
   baseUrl: process.env.AITX_BASE_URL || 'https://api.deepseek.com',
   model: process.env.AITX_MODEL || 'deepseek-v4-flash',
 };
