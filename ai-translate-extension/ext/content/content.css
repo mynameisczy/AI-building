@@ -1,0 +1,281 @@
+/* ===== AI 翻译助手 —— 内容脚本样式（统一 aitx- 前缀，尽量不与页面样式冲突） ===== */
+
+/* ---------- 通用重置 ---------- */
+.aitx-root,
+.aitx-root * {
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+
+/* ---------- 整页翻译 ---------- */
+.aitx-trans {
+  color: #1d4ed8;
+}
+.aitx-trans.aitx-block {
+  display: block;
+  margin-top: 0.3em;
+}
+html.aitx-hide-orig .aitx-orig {
+  display: none !important;
+}
+
+/* ---------- Toast ---------- */
+.aitx-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 24px;
+  z-index: 2147483100;
+  max-width: 360px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: rgba(17, 24, 39, 0.92);
+  color: #f9fafb;
+  font-size: 13px;
+  line-height: 1.5;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s, transform 0.2s;
+  pointer-events: none;
+}
+.aitx-toast.aitx-show {
+  opacity: 1;
+  transform: translateY(0);
+}
+.aitx-toast.aitx-toast-error {
+  background: rgba(159, 18, 57, 0.95);
+}
+
+/* ---------- 划词翻译按钮 ---------- */
+.aitx-selbtn {
+  position: fixed;
+  z-index: 2147483000;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #5b6cff, #38bdf8);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 28px;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(59, 130, 246, 0.45);
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity 0.15s, transform 0.15s;
+  user-select: none;
+}
+.aitx-selbtn.aitx-show {
+  opacity: 1;
+  transform: scale(1);
+}
+.aitx-selbtn:hover {
+  transform: scale(1.12);
+}
+
+/* ---------- 划词翻译气泡 ---------- */
+.aitx-selbox {
+  position: fixed;
+  z-index: 2147483200;
+  width: 380px;
+  max-width: calc(100vw - 24px);
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(6px) scale(0.98);
+  transition: opacity 0.15s, transform 0.15s;
+}
+.aitx-selbox.aitx-show {
+  opacity: 1;
+  transform: none;
+}
+.aitx-selbox-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #eef2ff, #e0f2fe);
+  border-bottom: 1px solid #e5e7eb;
+}
+.aitx-selbox-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+}
+.aitx-selbox-close {
+  cursor: pointer;
+  color: #6b7280;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 4px;
+  user-select: none;
+}
+.aitx-selbox-close:hover {
+  color: #111827;
+}
+.aitx-selbox-body {
+  padding: 12px 14px;
+  max-height: 260px;
+  overflow: auto;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #111827;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.aitx-selbox-body.aitx-selbox-error {
+  color: #be123c;
+}
+.aitx-selbox-foot {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid #f3f4f6;
+}
+.aitx-mini-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: #374151;
+  background: #f3f4f6;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.aitx-mini-btn:hover {
+  background: #e5e7eb;
+}
+
+/* ---------- 加载动画 ---------- */
+.aitx-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
+  border: 2px solid #cbd5e1;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: aitx-spin 0.8s linear infinite;
+}
+@keyframes aitx-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- 总结弹窗 ---------- */
+.aitx-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.45);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.aitx-modal.aitx-show {
+  opacity: 1;
+}
+.aitx-modal-card {
+  width: min(560px, calc(100vw - 48px));
+  max-height: min(72vh, 640px);
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.3);
+}
+.aitx-modal-head {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid #f3f4f6;
+}
+.aitx-modal-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+}
+.aitx-modal-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.aitx-modal-body {
+  padding: 16px 20px;
+  overflow: auto;
+  font-size: 14px;
+  line-height: 1.75;
+  color: #1f2937;
+}
+.aitx-modal-body h2,
+.aitx-modal-body h3,
+.aitx-modal-body h4 {
+  margin: 14px 0 6px;
+  font-size: 15px;
+  color: #111827;
+}
+.aitx-modal-body h2:first-child,
+.aitx-modal-body h3:first-child,
+.aitx-modal-body h4:first-child {
+  margin-top: 0;
+}
+.aitx-modal-body ul {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+.aitx-modal-body li {
+  margin: 4px 0;
+}
+.aitx-modal-body code {
+  background: #f3f4f6;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12.5px;
+  font-family: Consolas, Monaco, monospace;
+}
+.aitx-modal-body.aitx-modal-error {
+  color: #be123c;
+}
+.aitx-modal-loading {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  color: #6b7280;
+  padding: 8px 0;
+}
+.aitx-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 20px;
+  border-top: 1px solid #f3f4f6;
+}
+.aitx-btn {
+  padding: 7px 18px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  background: linear-gradient(135deg, #5b6cff, #3b82f6);
+  color: #ffffff;
+}
+.aitx-btn:hover {
+  filter: brightness(1.06);
+}
+.aitx-btn.aitx-btn-plain {
+  background: #f3f4f6;
+  color: #374151;
+}
+.aitx-btn.aitx-btn-plain:hover {
+  background: #e5e7eb;
+}

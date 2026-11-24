@@ -1,0 +1,4 @@
+node_modules/
+test/.playwright-profile/
+test/artifacts/
+*.log

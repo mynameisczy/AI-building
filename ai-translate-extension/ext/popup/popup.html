@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>AI 翻译助手</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header class="header">
+    <div class="logo">译</div>
+    <div class="titles">
+      <h1>AI 翻译助手</h1>
+      <p id="apiStatus"><span class="dot" id="statusDot"></span><span id="statusText">检查配置中…</span></p>
+    </div>
+  </header>
+
+  <main>
+    <!-- 页面操作 -->
+    <section class="card">
+      <div class="card-head">
+        <h2>页面操作</h2>
+        <span class="badge" id="domainBadge" title="当前页面">—</span>
+      </div>
+      <div class="action-grid">
+        <button id="btnTranslate" class="btn primary">
+          <span class="btn-icon">⇄</span>
+          <span class="btn-text">
+            <strong id="btnTranslateLabel">翻译整页</strong>
+            <small id="btnTranslateHint">自动中英互译</small>
+          </span>
+        </button>
+        <button id="btnSummary" class="btn primary outline">
+          <span class="btn-icon">✦</span>
+          <span class="btn-text">
+            <strong>网页总结</strong>
+            <small>AI 提炼核心要点</small>
+          </span>
+        </button>
+      </div>
+      <div class="tool-row" id="pageTools">
+        <button id="btnToggleOriginal" class="tool-btn">隐藏原文</button>
+        <button id="btnReset" class="tool-btn">恢复原状</button>
+        <button id="btnReTranslate" class="tool-btn">重新翻译</button>
+      </div>
+      <p class="status-line" id="opStatus"></p>
+    </section>
+
+    <!-- 设置 -->
+    <section class="card">
+      <div class="card-head">
+        <h2>AI 服务设置</h2>
+        <span class="badge green">OpenAI 协议</span>
+      </div>
+
+      <label class="field">
+        <span>API Key</span>
+        <div class="input-wrap">
+          <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" spellcheck="false" />
+          <button id="eyeBtn" class="eye" type="button">显示</button>
+        </div>
+      </label>
+
+      <label class="field">
+        <span>Base URL</span>
+        <input id="baseUrl" type="text" placeholder="https://api.deepseek.com" spellcheck="false" />
+      </label>
+
+      <label class="field">
+        <span>模型</span>
+        <input id="model" type="text" placeholder="deepseek-chat" spellcheck="false" />
+      </label>
+
+      <p class="hint">兼容 OpenAI 协议。DeepSeek 填 <code>https://api.deepseek.com</code>；OpenAI 官方填 <code>https://api.openai.com/v1</code>。</p>
+
+      <div class="btn-row">
+        <button id="btnSave" class="btn primary small">保存设置</button>
+        <button id="btnTest" class="btn outline small">测试连接</button>
+      </div>
+      <p class="status-line" id="testStatus"></p>
+
+      <div class="divider"></div>
+
+      <div class="toggle-row">
+        <div>
+          <strong>划词翻译</strong>
+          <small>选中文字后点击「译」按钮</small>
+        </div>
+        <label class="switch">
+          <input id="selEnabled" type="checkbox" />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </section>
+  </main>
+
+  <footer>v1.0.0 · AI 翻译助手</footer>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
