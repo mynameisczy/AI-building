@@ -93,8 +93,8 @@ async function refreshPageState() {
   const hint = $('btnTranslateHint');
   const tools = $('pageTools');
   if (res.ok && res.data) {
-    const dir = res.data.target === 'en' ? '中文 → 英文' : '英文 → 中文';
-    hint.textContent = `自动 ${dir}`;
+    const lang = (l) => (l === 'zh' ? '中文' : '英文');
+    hint.textContent = `${lang(res.data.source)} → ${lang(res.data.target)}`;
     if (res.data.busy) {
       $('btnTranslate').disabled = true;
       label.textContent = '翻译中…';
@@ -227,6 +227,12 @@ function bindEvents() {
   // 划词翻译开关
   $('selEnabled').addEventListener('change', async (e) => {
     await chrome.storage.sync.set({ selectionEnabled: e.target.checked });
+  });
+
+  // 打开管理面板
+  $('btnOptions').addEventListener('click', () => {
+    chrome.runtime.openOptionsPage();
+    window.close();
   });
 }
 

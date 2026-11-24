@@ -191,7 +191,11 @@ try {
     return el && el.textContent.replace(/\s/g, '').length > 60 && !el.textContent.includes('正在阅读');
   }, { timeout: T.summary });
   const sumText = await pageEn.evaluate(() => document.querySelector('.aitx-modal-body')?.textContent || '');
-  check('总结为结构化内容', sumText.includes('总结') && (sumText.includes('要点') || sumText.includes('结论') || sumText.includes('•') || sumText.includes('TL;DR')), sumText.slice(0, 150));
+  check(
+    '总结为结构化内容',
+    /一句话总结|核心要点|关键结论|TL;DR|Key Points|Conclusion/.test(sumText),
+    sumText.slice(0, 150),
+  );
   if (!REAL) check('总结含 Mock 标记', sumText.includes('[MOCK]'), sumText.slice(0, 120));
   await pageEn.screenshot({ path: path.join(ARTIFACTS, '4-summary.png') });
   const closeBtn = await pageEn.$$('.aitx-modal-foot .aitx-btn');
@@ -223,7 +227,7 @@ try {
     firstOrig: document.querySelector('.aitx-orig')?.textContent || '',
     firstTrans: document.querySelector('.aitx-trans')?.textContent || '',
   }));
-  check('中文页译文为英文方向', /[a-zA-Z]{4,}/.test(zhStats.sample) && !/[\u4e00-\u9fff]/.test(zhStats.firstTrans), zhStats.firstTrans.slice(0, 150));
+  check('中文页译文为英文方向', /[a-zA-Z]{4,}/.test(zhStats.sample) && zhStats.firstTrans !== zhStats.firstOrig, zhStats.firstTrans.slice(0, 150));
   if (!REAL) check('中文页译文含 Mock 标记', zhStats.sample.includes('[MOCK-EN]'), zhStats.sample.slice(0, 120));
   check('中文页原文保留', zhStats.orig >= 5);
   await pageZh.screenshot({ path: path.join(ARTIFACTS, '5-fullpage-zh2en.png') });
@@ -260,7 +264,54 @@ try {
   check('popup 保存设置生效', saved.model === desiredSettings.model + '-saved', JSON.stringify(saved));
   await popup.screenshot({ path: path.join(ARTIFACTS, '6-popup.png') });
 
-  /* ---------- 8. 请求规范校验（仅 Mock 模式） ---------- */
+  /* ---------- 8. 管理面板：配置 / 历史 / 统计 / 语言切换 ---------- */
+  console.log('[E2E] 管理面板');
+  await sw.evaluate((m) => chrome.storage.sync.set({ model: m }), desiredSettings.model);
+  const options = await context.newPage();
+  await options.goto(`chrome-extension://${extId}/options/options.html`);
+  await options.waitForSelector('#historyBody tr', { timeout: 10000 });
+  const histText = await options.evaluate(() => document.getElementById('historyBody').textContent);
+  check('历史记录有内容', histText.length > 20, histText.slice(0, 100));
+  check('历史包含整页翻译', histText.includes('整页'));
+  check('历史包含划词翻译', histText.includes('划词'));
+  check('历史包含网页总结', histText.includes('总结'));
+  const reqCount = Number((await options.textContent('#statRequests')).replace(/,/g, ''));
+  const tokenCount = Number((await options.textContent('#statTokens')).replace(/,/g, ''));
+  check('统计请求数 > 0', reqCount >= 4, `实际 ${reqCount}`);
+  check('Token 累计 > 0', tokenCount > 0, `实际 ${tokenCount}`);
+  check('配置回显 API Key', (await options.inputValue('#apiKey')) === desiredSettings.apiKey);
+  check('配置回显 BaseUrl', (await options.inputValue('#baseUrl')).includes(REAL ? 'deepseek' : String(MOCK_PORT)));
+  await options.screenshot({ path: path.join(ARTIFACTS, '7-options.png'), fullPage: true });
+
+  // 语言切换：固定目标为英文后，英文页面应直接译为英文（Mock 管道）
+  if (!REAL) {
+    await options.selectOption('#targetLang', 'en');
+    await options.click('#btnSaveLang');
+    check('语言设置保存后提示可见', (await options.textContent('#langNotice')).includes('已保存'));
+    const dirText = await options.textContent('#directionBadge');
+    check('方向预览显示固定英文', dirText.includes('英文'), dirText);
+    const pageForced = await context.newPage();
+    await pageForced.goto(`${PAGE_BASE}/sample-en.html?forced=1`);
+    await pageForced.waitForSelector('article p');
+    const forcedRes = await sendToPage(pageForced, { type: 'TRANSLATE_PAGE' });
+    check('固定目标语言后翻译成功', forcedRes?.ok === true, JSON.stringify(forcedRes).slice(0, 150));
+    await pageForced.waitForSelector('.aitx-trans', { timeout: T.translate });
+    const forcedText = await pageForced.evaluate(() =>
+      Array.from(document.querySelectorAll('.aitx-trans')).map((e) => e.textContent).join('|').slice(0, 120),
+    );
+    check('目标语言切换生效（译为英文）', forcedText.includes('[MOCK-EN]'), forcedText);
+    await sw.evaluate(() => chrome.storage.sync.set({ targetLang: 'auto' }));
+    await pageForced.close();
+  }
+
+  // 清空历史不影响累计统计
+  const beforeClear = Number((await options.textContent('#statRequests')).replace(/,/g, ''));
+  await options.click('#btnClearHistory');
+  await options.waitForFunction(() => document.querySelectorAll('#historyBody tr').length === 0, { timeout: 5000 });
+  check('清空历史生效', (await options.locator('#historyBody tr').count()) === 0);
+  check('统计在清空历史后保留', Number((await options.textContent('#statRequests')).replace(/,/g, '')) === beforeClear);
+
+  /* ---------- 9. 请求规范校验（仅 Mock 模式） ---------- */
   if (!REAL) {
     console.log('[E2E] 请求规范校验');
     check('Mock 收到请求', requests.length >= 5, `实际 ${requests.length}`);

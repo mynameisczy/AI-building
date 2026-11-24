@@ -8,7 +8,38 @@ export const DEFAULT_SETTINGS = {
   apiKey: '',
   baseUrl: 'https://api.deepseek.com',
   model: 'deepseek-chat',
+  sourceLang: 'auto',
+  targetLang: 'auto',
+  selTarget: 'auto',
 };
+
+/** 文本是否以中文为主（CJK 字符占比 > 20%） */
+export function isChineseText(text) {
+  const str = String(text || '');
+  const cjk = (str.match(/[\u3400-\u4dbf\u4e00-\u9fff]/g) || []).length;
+  return cjk / Math.max(str.replace(/\s/g, '').length, 1) > 0.2;
+}
+
+/**
+ * 根据设置与样本文本解析翻译方向
+ * - source='auto' 时按文本自动检测
+ * - target='auto' 时自动取源语言的反向语言
+ * - 若目标与源相同，则自动取反向语言，避免无意义翻译
+ */
+export function resolveDirection({ source, target, sample } = {}) {
+  const detected = isChineseText(sample) ? 'zh' : 'en';
+  const sourceFixed = source === 'zh' || source === 'en';
+  const targetFixed = target === 'zh' || target === 'en';
+  let src = sourceFixed ? source : detected;
+  let tgt = targetFixed ? target : src === 'zh' ? 'en' : 'zh';
+  // 目标语言固定时优先尊重目标：源自动检测且与目标相同，则推断源为反向语言
+  if (!sourceFixed && targetFixed && tgt === detected) src = detected === 'zh' ? 'en' : 'zh';
+  // 仅当源和目标都被显式设为相同语言时才兜底翻转
+  if (tgt === src) tgt = src === 'zh' ? 'en' : 'zh';
+  return { source: src, target: tgt, detected };
+}
+
+export const LANG_LABELS = { auto: '自动检测', zh: '中文', en: '英文' };
 
 /** 规范化 Base URL：补协议、去尾部斜杠 */
 export function normalizeBaseUrl(raw) {
@@ -161,13 +192,14 @@ export function parseTranslationResponse(content, count) {
 }
 
 /** 批量翻译（整页翻译核心），缺失段落回退为原文 */
-export async function translateSegments({ settings, texts, target, timeoutMs = 90000 }) {
+export async function translateSegments({ settings, texts, target, timeoutMs = 90000, onUsage }) {
   const data = await chat({
     settings,
     messages: buildTranslateMessages({ texts, target }),
     temperature: 0.3,
     timeoutMs,
   });
+  onUsage?.(data.usage, data);
   const content = data.choices[0].message.content;
   const arr = parseTranslationResponse(content, texts.length);
   if (!arr) {
@@ -179,7 +211,7 @@ export async function translateSegments({ settings, texts, target, timeoutMs = 9
 }
 
 /** 划词翻译（单段，自由文本输出） */
-export async function translateText({ settings, text, target, timeoutMs = 60000 }) {
+export async function translateText({ settings, text, target, timeoutMs = 60000, onUsage }) {
   const messages = [
     {
       role: 'system',
@@ -188,6 +220,7 @@ export async function translateText({ settings, text, target, timeoutMs = 60000 
     { role: 'user', content: String(text) },
   ];
   const data = await chat({ settings, messages, temperature: 0.3, timeoutMs });
+  onUsage?.(data.usage, data);
   return String(data.choices[0].message.content || '').trim();
 }
 
@@ -195,7 +228,7 @@ export async function translateText({ settings, text, target, timeoutMs = 60000 
 export function buildSummaryMessages({ title, url, text, lang = 'zh' }) {
   const zh = lang !== 'en';
   const sys = zh
-    ? '你是一名专业的网页内容总结助手。用户会提供网页的标题、链接与正文，请用简体中文输出高质量摘要。'
+    ? '你是一名专业的网页内容总结助手。用户会提供网页的标题、链接与正文。必须用简体中文输出高质量摘要，即使原文是英文，输出语言也必须是简体中文。'
     : 'You are a professional web page summarization assistant. Output a high-quality summary in English.';
   const fmt = zh
     ? `输出格式（Markdown）：
@@ -226,9 +259,10 @@ export function buildSummaryMessages({ title, url, text, lang = 'zh' }) {
 }
 
 /** 网页总结 */
-export async function summarize({ settings, title, url, text, lang = 'zh', timeoutMs = 180000 }) {
+export async function summarize({ settings, title, url, text, lang = 'zh', timeoutMs = 180000, onUsage }) {
   const messages = buildSummaryMessages({ title, url, text, lang });
   const data = await chat({ settings, messages, temperature: 0.5, maxTokens: 2048, timeoutMs });
+  onUsage?.(data.usage, data);
   return String(data.choices[0].message.content || '').trim();
 }
 

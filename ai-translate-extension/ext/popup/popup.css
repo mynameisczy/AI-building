@@ -186,6 +186,34 @@ main {
 }
 
 /* ---------- 状态行 ---------- */
+.options-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e0e7ff;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f5f7ff, #eff8ff);
+  color: #3730a3;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s, filter 0.15s;
+}
+.options-link:hover {
+  border-color: #a5b4fc;
+  filter: brightness(0.99);
+}
+.options-desc {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #6366f1;
+}
+
 .status-line {
   margin-top: 10px;
   min-height: 18px;

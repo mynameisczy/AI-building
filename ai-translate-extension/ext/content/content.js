@@ -18,10 +18,12 @@
     busy: false,          // 整页翻译进行中
     busySummary: false,   // 总结进行中
     translated: false,
-    cache: new Map(),     // `${target}|${text}` -> 译文
+    cache: new Map(),     // `${source}>${target}|${text}` -> 译文
     pageLang: null,
     selectionEnabled: true,
-    selTarget: 'auto',    // auto | zh | en
+    selTarget: 'auto',    // auto | zh | en（划词目标语言覆盖）
+    sourceLang: 'auto',   // auto | zh | en
+    targetLang: 'auto',   // auto | zh | en
   };
 
   /* ---------------- 基础工具 ---------------- */
@@ -51,21 +53,47 @@
     return state.pageLang;
   }
 
-  function selectionTarget(text) {
-    if (state.selTarget === 'zh') return 'zh';
-    if (state.selTarget === 'en') return 'en';
-    return isChinese(text) ? 'en' : 'zh'; // 中英自动互译
+  // 与 lib/api.js 的 resolveDirection 语义保持一致
+  function resolveDirection(sample) {
+    const detected = isChinese(sample) ? 'zh' : 'en';
+    const sourceFixed = state.sourceLang === 'zh' || state.sourceLang === 'en';
+    const targetFixed = state.targetLang === 'zh' || state.targetLang === 'en';
+    let source = sourceFixed ? state.sourceLang : detected;
+    let target = targetFixed ? state.targetLang : source === 'zh' ? 'en' : 'zh';
+    if (!sourceFixed && targetFixed && target === detected) source = detected === 'zh' ? 'en' : 'zh';
+    if (target === source) target = source === 'zh' ? 'en' : 'zh';
+    return { source, target, detected };
   }
 
-  // 读取设置并监听变更
-  chrome.storage.sync.get({ selectionEnabled: true, selTarget: 'auto' }, (cfg) => {
-    state.selectionEnabled = cfg.selectionEnabled !== false;
-    state.selTarget = cfg.selTarget || 'auto';
+  function selectionDirection(text) {
+    const dir = resolveDirection(text);
+    if (state.selTarget === 'zh' || state.selTarget === 'en') {
+      dir.target = state.selTarget === dir.source ? (dir.source === 'zh' ? 'en' : 'zh') : state.selTarget;
+    }
+    return dir;
+  }
+
+  // 读取设置并监听变更；消息入口会等待设置加载完成，避免竞态
+  const settingsReady = new Promise((resolve) => {
+    chrome.storage.sync.get(
+      { selectionEnabled: true, selTarget: 'auto', sourceLang: 'auto', targetLang: 'auto' },
+      (cfg) => {
+        state.selectionEnabled = cfg.selectionEnabled !== false;
+        state.selTarget = cfg.selTarget || 'auto';
+        state.sourceLang = cfg.sourceLang || 'auto';
+        state.targetLang = cfg.targetLang || 'auto';
+        resolve();
+      },
+    );
   });
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'sync') return;
     if (changes.selectionEnabled) state.selectionEnabled = changes.selectionEnabled.newValue !== false;
     if (changes.selTarget) state.selTarget = changes.selTarget.newValue || 'auto';
+    if (changes.sourceLang) state.sourceLang = changes.sourceLang.newValue || 'auto';
+    if (changes.targetLang) state.targetLang = changes.targetLang.newValue || 'auto';
+    // 语言方向变化后清空缓存，避免沿用旧方向的译文
+    if (changes.sourceLang || changes.targetLang || changes.selTarget) state.cache.clear();
   });
 
   function clampToViewport(x, y, w, h) {
@@ -172,13 +200,13 @@
       showToast(state.translated ? '页面没有新的可翻译内容' : '未找到可翻译的文本');
       return { ok: true, translated: state.translated };
     }
-    const target = detectPageLang() === 'zh' ? 'en' : 'zh';
+    const { source, target } = resolveDirection(segments.map((s) => s.text).join(' ').slice(0, 4000));
     state.busy = true;
     try {
       // 命中缓存的段落直接应用
       const pending = [];
       for (const seg of segments) {
-        const key = `${target}|${seg.text}`;
+        const key = `${source}>${target}|${seg.text}`;
         if (state.cache.has(key)) applyTranslation(seg, state.cache.get(key));
         else pending.push(seg);
       }
@@ -219,13 +247,19 @@
         while (batches.length) {
           const batch = batches.shift();
           const texts = batch.map((s) => s.text);
-          const res = await send({ type: 'TRANSLATE_SEGMENTS', texts, target });
+          const res = await send({
+            type: 'TRANSLATE_SEGMENTS',
+            texts,
+            source,
+            target,
+            url: location.href,
+          });
           done += 1;
           if (res.ok && Array.isArray(res.data) && res.data.length === texts.length) {
             batch.forEach((seg, i) => {
               const t = res.data[i];
               if (typeof t === 'string' && t) {
-                state.cache.set(`${target}|${seg.text}`, t);
+                state.cache.set(`${source}>${target}|${seg.text}`, t);
                 try { applyTranslation(seg, t); } catch { /* 节点可能已变化 */ }
               }
             });
@@ -243,7 +277,8 @@
         showToast(`翻译完成，${failed}/${total} 批失败：${firstError}`, { error: true, duration: 7000 });
         return { ok: false, error: firstError, translated: true, target };
       }
-      showToast(`翻译完成（共 ${pending.length} 段 / ${total} 批，${target === 'en' ? '中 → 英' : '英 → 中'}）`);
+      const dirName = (l) => (l === 'zh' ? '中' : '英');
+      showToast(`翻译完成（共 ${pending.length} 段 / ${total} 批，${dirName(source)} → ${dirName(target)}）`);
       return { ok: true, translated: true, target };
     } catch (e) {
       showToast(`翻译失败：${e?.message || e}`, { error: true, duration: 6000 });
@@ -320,7 +355,8 @@
       hideSelBtn();
       return;
     }
-    selAnchor = { text, target: selectionTarget(text) };
+    const dir = selectionDirection(text);
+    selAnchor = { text, source: dir.source, target: dir.target };
     const btn = ensureSelBtn();
     const pos = clampToViewport(rect.left + rect.width / 2 - 14, rect.bottom + 6, 28, 28);
     lastBtnPos = { x: pos.left, y: pos.top };
@@ -338,10 +374,10 @@
 
   async function onSelBtnClick() {
     if (!selAnchor) return;
-    const { text, target } = selAnchor;
+    const { text, source, target } = selAnchor;
     hideSelBtn();
     showSelBox({ loading: true, target });
-    const res = await send({ type: 'TRANSLATE_TEXT', text, target });
+    const res = await send({ type: 'TRANSLATE_TEXT', text, source, target, url: location.href });
     if (selBox?.isConnected) {
       if (res.ok) showSelBox({ text: res.data, target, original: text });
       else showSelBox({ error: res.error, target });
@@ -520,12 +556,15 @@
     state.busySummary = true;
     showSummaryModal({ loading: true });
     try {
+      const dir = resolveDirection(text.slice(0, 4000));
       const res = await send({
         type: 'SUMMARIZE',
         title: document.title,
         url: location.href,
         text: text.slice(0, 20000),
-        lang: 'zh',
+        source: dir.source,
+        target: dir.target,
+        lang: dir.target,
       });
       if (res.ok) showSummaryModal({ markdown: res.data });
       else showSummaryModal({ error: res.error });
@@ -576,6 +615,7 @@
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     (async () => {
       try {
+        await settingsReady;
         switch (msg?.type) {
           case 'GET_STATE':
             return sendResponse({
@@ -583,7 +623,7 @@
               data: {
                 translated: state.translated,
                 busy: state.busy,
-                target: detectPageLang() === 'zh' ? 'en' : 'zh',
+                ...resolveDirection((document.body?.innerText || '').slice(0, 4000)),
               },
             });
           case 'TRANSLATE_PAGE':

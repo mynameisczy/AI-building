@@ -47,6 +47,14 @@ check('normalizeBaseUrl 补协议', api.normalizeBaseUrl('api.deepseek.com') ===
 check('chatCompletionsUrl 拼接', api.chatCompletionsUrl('https://api.deepseek.com') === 'https://api.deepseek.com/chat/completions');
 check('chatCompletionsUrl 已含端点', api.chatCompletionsUrl('https://x.com/v1/chat/completions') === 'https://x.com/v1/chat/completions');
 
+console.log('[单元] 语言方向解析');
+check('自动检测中文→英文', api.resolveDirection({ sample: '这是一段中文文本' }).target === 'en');
+check('自动检测英文→中文', api.resolveDirection({ sample: 'This is an English text' }).target === 'zh');
+check('固定目标语言优先', api.resolveDirection({ source: 'auto', target: 'zh', sample: 'Hello world' }).target === 'zh');
+check('固定源语言生效', api.resolveDirection({ source: 'zh', target: 'auto', sample: 'Hello world' }).source === 'zh');
+check('源与目标相同时自动取反向', api.resolveDirection({ source: 'zh', target: 'zh', sample: '你好' }).target === 'en');
+check('固定目标优先于自动检测', (() => { const d = api.resolveDirection({ source: 'auto', target: 'en', sample: 'Hello world' }); return d.source === 'zh' && d.target === 'en'; })());
+
 console.log('[单元] 翻译结果解析');
 {
   const r1 = api.parseTranslationResponse('```json\n[{"i":1,"t":"a"},{"i":2,"t":"b"}]\n```', 2);
